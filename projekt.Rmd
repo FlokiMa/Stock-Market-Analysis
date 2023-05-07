@@ -1,0 +1,406 @@
+---
+title: "Stock market analysis"
+author: "Maarten Ghysens"
+date: "2023-05-05"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  fontsize: 12pt
+  word_document: default
+---
+# **Introduction**
+
+
+Choosing the right investment portfolio is a matter that concerns people interested in an alternative way of allocating their capital or savings. An important stimulus determining the consideration of investment activities is the deteriorating economic situation, which is a consequence of exogenous factors such as the COVID-19 pandemic and the war in Ukraine. In view of these unprecedented events, countries had to take mitigating actions to alleviate the effects of weakening economic activity, mainly resorting to monetary and fiscal policy tools. One consequence of such actions is, among other things, an increase in public debt, which implies the initiation of inflationary processes.
+
+The main goal of the report is to analyze 5 selected companies in comparison to the WIG20 stock index. For this purpose, a comparative analysis of returns was conducted, data visualizations were created, correlations were examined, and Value at Risk was calculated. An analysis was carried out using RStudio. Dataset was obtained from Stooq.pl, and research sample covers the period from January 1, 2020 to April 28, 2023. The report has an empirical character.
+
+\newpage
+
+
+
+``` {r dane, message = F,warning=F,echo=F}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(RCurl,RcmdrMisc,openxlsx,readxl,data.table,quantmod,xts,DistributionUtils,nortest, ggplot2, tidyverse, magrittr)
+
+
+data_set <- 
+  paste(getwd(),sep='',"/dane.xlsx") %>% 
+  read_excel()
+
+close_index <- data_set[,c("Zamkniecie(WIG20)","Zamkniecie(CDR)","Zamkniecie(CPS)","Zamkniecie(KGH)","Zamkniecie(LPP)","Zamkniecie(DNP)")]
+
+colnames(close_index) <- c("WIG20", "CD PROJECT", "CYFROWY POLSAT", "KGHM", "LPP", "DINO")
+
+                      
+date_index <- as.Date(data_set$Data, format="%Y/%m/%d")
+
+
+close_index <- as.xts(close_index, date_index) 
+
+
+```
+# **Data visualization**
+The following chart shows how the closing prices of selected stocks and the stock market index evolved during the analyzed period. The data depicted on the chart indicates that all companies and the WIG20 index were affected by the onset of the COVID19 pandemic and the outbreak of war in Ukraine. Among the two companies (Cyfrowy Polsat and CD Projekt), downward trends were observed (from 2022 and the end of 2020, respectively). The reason for the decline in Cyfrowy Polsat may be the increasing cost of servicing debt caused by interest rate hikes (interest rate hikes are a monetary policy tool used to mitigate inflation) and an energy crisis (Cyfrowy Polsat also offers energy services). [[1]](https://www.telko.in/pb-kurs-akcji-cyfrowego-polsatu-szoruje-pod-dnie)
+The decline in CD Projekt's stock prices may be due to consumer disappointment with the game "Cyberpunk 2077" and the distant release date of the next part of "The Witcher".[[2]](https://www.bankier.pl/wiadomosc/Kurs-CD-Projektu-runal-ale-koniec-spadkow-moze-byc-blisko-opinia-8357070.html)
+DINO is characterized by an upward trend. The share price has more than doubled. It is a dynamically developing network of grocery stores that has recently been regularly recording revenue growth.[[3]](https://www.portalspozywczy.pl/handel/wiadomosci/dino-notuje-spory-wzrost-zysku-i-przychodow-za-i-kwartal-sa-wyzsze-od-oczekiwan,223363.html)
+``` {r prezent1, message = F,warning=F,echo=F,fig.align="center"}
+pl1 <- ggplot(data=as.data.frame(close_index), aes(date_index, .data[["WIG20"]])) +
+  geom_line() + ggtitle("WIG20") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Price")
+
+pl2 <- ggplot(data=as.data.frame(close_index), aes(date_index, .data[["CD PROJECT"]])) +
+  geom_line() + ggtitle("CD PROJECT") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Price")
+
+pl3 <- ggplot(data=as.data.frame(close_index), aes(date_index, .data[["CYFROWY POLSAT"]])) +
+  geom_line() + ggtitle("CYFROWY POLSAT") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Price")
+
+pl4 <- ggplot(data=as.data.frame(close_index), aes(date_index, .data[["KGHM"]])) +
+  geom_line() + ggtitle("KGHM") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Price")
+
+pl5 <- ggplot(data=as.data.frame(close_index), aes(date_index, .data[["LPP"]])) +
+  geom_line() + ggtitle("LPP") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Price")
+
+pl6 <- ggplot(data=as.data.frame(close_index), aes(date_index, .data[["DINO"]])) +
+  geom_line() + ggtitle("DINO") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Price")
+
+library(cowplot)
+plot_grid(pl1,pl2,pl3,pl4,pl5,pl6,
+          ncol = 2, nrow = 3)
+
+
+```
+
+``` {r Rate_of_return1, message = F,warning=F,echo=F}
+#stopy zwrotu
+rd_WIG20<- close_index$WIG20/lag(close_index$WIG20, n = 1) - 1
+rd_CD_PROJECT<- close_index$"CD PROJECT"/lag(close_index$"CD PROJECT", n = 1) - 1
+rd_CYFROWY_POLSAT <- close_index$"CYFROWY POLSAT"/lag(close_index$"CYFROWY POLSAT", n = 1)-1
+rd_KGHM<- close_index$KGHM/lag(close_index$KGHM, n = 1) - 1
+rd_LPP<- close_index$LPP/lag(close_index$LPP, n = 1) - 1
+rd_DINO <- close_index$DINO/lag(close_index$DINO, n = 1)-1
+
+rdWigP<-periodReturn(close_index$WIG20,period='daily')
+
+
+#logarytmiczne stopy zwrotu
+rdl_WIG20<- log(close_index$WIG20)/log(lag(close_index$WIG20, n = 1)) - 1
+rdl_CD_PROJECT<- log(close_index$"CD PROJECT")/log(lag(close_index$"CD PROJECT", n = 1)) - 1
+rdl_CYFROWY_POLSAT <- log(close_index$"CYFROWY POLSAT")/log(lag(close_index$"CYFROWY POLSAT", n = 1))-1
+rdl_KGHM<- log(close_index$KGHM)/log(lag(close_index$KGHM, n = 1)) - 1
+rdl_LPP<- log(close_index$LPP)/log(lag(close_index$LPP, n = 1)) - 1
+rdl_DINO <- log(close_index$DINO)/log(lag(close_index$DINO, n = 1))-1
+```
+\newpage
+Below are the return rates and logarithmic return rates of the WIG20 index and selected companies. Significant fluctuations were observed in all cases during the beginning of the COVID19 pandemic. In the case of CD Project, significant fluctuations in return rates were also visible around the release of the "Cyber Punk 2077". The war in Ukraine also had an impact on return rate fluctuations, particularly at the outbreak of the conflict. Stronger fluctuations persisted later for Cyfrowy Polsat, which may be partly due to the energy crisis. The smallest fluctuations during the examined period were observed for LPP.
+``` {r prezent2, message = F,warning=F,echo=F,fig.align="center"}
+r1 <- ggplot(data=as.data.frame(rd_WIG20), aes(date_index, .data[["WIG20"]])) +
+  geom_line() + ggtitle("WIG20") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Rate of return")
+
+r2 <- ggplot(data=as.data.frame(rd_CD_PROJECT), aes(date_index, .data[["CD PROJECT"]])) +
+  geom_line() + ggtitle("CD PROJECT") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Rate of return")
+
+r3 <- ggplot(data=as.data.frame(rd_CYFROWY_POLSAT), aes(date_index, .data[["CYFROWY POLSAT"]])) +
+  geom_line() + ggtitle("CYFROWY POLSAT") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Rate of return")
+
+r4 <- ggplot(data=as.data.frame(rd_KGHM), aes(date_index, .data[["KGHM"]])) +
+  geom_line() + ggtitle("KGHM") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Rate of return")
+
+r5 <- ggplot(data=as.data.frame(rd_LPP), aes(date_index, .data[["LPP"]])) +
+  geom_line() + ggtitle("LPP") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Rate of return")
+
+r6 <- ggplot(data=as.data.frame(rd_DINO), aes(date_index, .data[["DINO"]])) +
+  geom_line() + ggtitle("DINO") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Rate of return")
+
+plot_grid(r1,r2,r3,r4,r5,r6,
+          ncol = 2, nrow = 3)
+
+
+```
+
+``` {r prezent3, message = F,warning=F,echo=F, fig.align="center"}
+rl1 <- ggplot(data=as.data.frame(rdl_WIG20), aes(date_index, .data[["WIG20"]])) +
+  geom_line() + ggtitle("WIG20") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Log rate of return")
+
+rl2 <- ggplot(data=as.data.frame(rdl_CD_PROJECT), aes(date_index, .data[["CD PROJECT"]])) +
+  geom_line() + ggtitle("CD PROJECT") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Log rate of return")
+
+rl3 <- ggplot(data=as.data.frame(rdl_CYFROWY_POLSAT), aes(date_index, .data[["CYFROWY POLSAT"]])) +
+  geom_line() + ggtitle("CYFROWY POLSAT") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Log rate of return")
+
+rl4 <- ggplot(data=as.data.frame(rdl_KGHM), aes(date_index, .data[["KGHM"]])) +
+  geom_line() + ggtitle("KGHM") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Log rate of return")
+
+rl5 <- ggplot(data=as.data.frame(rdl_LPP), aes(date_index, .data[["LPP"]])) +
+  geom_line() + ggtitle("LPP") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Log rate of return")
+
+rl6 <- ggplot(data=as.data.frame(rdl_DINO), aes(date_index, .data[["DINO"]])) +
+  geom_line() + ggtitle("DINO") + theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Date") + ylab("Log rate of return")
+
+plot_grid(rl1,rl2,rl3,rl4,rl5,rl6,
+          ncol = 2, nrow = 3)
+
+
+```
+
+``` {r Rate_of_return2, message = F,warning=F,echo=F}
+r_WIG20<-as.data.frame(merge(rd_WIG20,rdl_WIG20)) %>%
+  set_colnames(c("Rate of return", "Log rate of return"))
+r_CD_PROJECT<-as.data.frame(merge(rd_CD_PROJECT,rdl_CD_PROJECT)) %>%
+  set_colnames(c("Rate of return", "Log rate of return"))
+r_CYFROWY_POLSAT<-as.data.frame(merge(rd_CYFROWY_POLSAT,rdl_CYFROWY_POLSAT)) %>%
+  set_colnames(c("Rate of return", "Log rate of return"))
+r_KGHM<-as.data.frame(merge(rd_KGHM,rdl_KGHM)) %>%
+  set_colnames(c("Rate of return", "Log rate of return"))
+r_LPP<-as.data.frame(merge(rd_LPP,rdl_LPP)) %>%
+  set_colnames(c("Rate of return", "Log rate of return"))
+r_DINO<-as.data.frame(merge(rd_DINO,rdl_DINO)) %>%
+  set_colnames(c("Rate of return", "Log rate of return"))
+```
+
+
+``` {r prezent4, message = F,warning=F,echo=F, fig.align="center"}
+r_rl_1 <- ggplot() +
+  geom_line(data=r_WIG20, aes(date_index, .data[["Rate of return"]], color='Rate of return'), size=1) +
+  geom_line(data=r_WIG20, aes(date_index, .data[["Log rate of return"]], color='Log rate of return'), size=1) +
+  xlab("Date") + ylab("Rates of return") + ggtitle("WIG20 ROR vs. Log. ROR") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+r_rl_2 <- ggplot() +
+  geom_line(data=r_CD_PROJECT, aes(date_index, .data[["Rate of return"]], color='Rate of return'), size=1) +
+  geom_line(data=r_CD_PROJECT, aes(date_index, .data[["Log rate of return"]], color='Log rate of return'), size=1) +
+  xlab("Date") + ylab("Rates of return") + ggtitle("CD PROJECT ROR vs. Log. ROR") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+r_rl_3 <- ggplot() +
+  geom_line(data=r_CYFROWY_POLSAT, aes(date_index, .data[["Rate of return"]], color='Rate of return'), size=1) +
+  geom_line(data=r_CYFROWY_POLSAT, aes(date_index, .data[["Log rate of return"]], color='Log rate of return'), size=1) +
+  xlab("Date") + ylab("Rates of return") + ggtitle("CYFROWY POLSAT ROR vs. Log. ROR") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+r_rl_4 <- ggplot() +
+  geom_line(data=r_KGHM, aes(date_index, .data[["Rate of return"]], color='Rate of return'), size=1) +
+  geom_line(data=r_KGHM, aes(date_index, .data[["Log rate of return"]], color='Log rate of return'), size=1) +
+  xlab("Date") + ylab("Rates of return") + ggtitle("KGHM ROR vs. Log. ROR") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+r_rl_5 <- ggplot() +
+  geom_line(data=r_LPP, aes(date_index, .data[["Rate of return"]], color='Rate of return'), size=1) +
+  geom_line(data=r_LPP, aes(date_index, .data[["Log rate of return"]], color='Log rate of return'), size=1) +
+  xlab("Date") + ylab("Rates of return") + ggtitle("LPP ROR vs. Log. ROR") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+r_rl_6 <- ggplot() +
+  geom_line(data=r_DINO, aes(date_index, .data[["Rate of return"]], color='Rate of return'), size=1) +
+  geom_line(data=r_DINO, aes(date_index, .data[["Log rate of return"]], color='Log rate of return'), size=1) +
+  xlab("Date") + ylab("Rates of return") + ggtitle("DINO ROR vs. Log. ROR") +
+  theme(plot.title = element_text(hjust = 0.5))
+plt_lst <- list(r_rl_1, r_rl_2, r_rl_3, r_rl_4, r_rl_5, r_rl_6)
+for (plt in plt_lst) {
+  plot(plt)
+}
+#plot_grid(r_rl_1, r_rl_2, r_rl_3, r_rl_4, r_rl_5, r_rl_6,
+          #ncol = 1, nrow = 6)
+```
+
+``` {r CUM_rate_of_return, message = F,warning=F,echo=F}
+#### Zyski-zakumulowane stopy zwrotu####
+rdl_WIG20_CUM<-cumsum(na.omit(rdl_WIG20))
+rdl_CDR_CUM<-cumsum(na.omit(rdl_CD_PROJECT))
+rdl_CP_CUM<-cumsum(na.omit(rdl_CYFROWY_POLSAT))
+rdl_KGHM_CUM<-cumsum(na.omit(rdl_KGHM))
+rdl_LPP_CUM<-cumsum(na.omit(rdl_LPP))
+rdl_DINO_CUM<-cumsum(na.omit(rdl_DINO))
+
+
+CUM_merged <- merge(rdl_WIG20_CUM, rdl_CDR_CUM, rdl_CP_CUM, rdl_KGHM_CUM, rdl_LPP_CUM, rdl_DINO_CUM)
+colnames(CUM_merged) <- c("WIG20", "CDR", "CP", "KGHM", "LPP", "DINO")
+CUM_merged <- as.data.frame(CUM_merged)
+date_index2 <- date_index[-1]
+```
+\newpage
+The chart below illustrates the cumulative return of the WIG20 index and selected companies. Cumulative return is the total percentage value of return on investment over a specified period of time, taking into account all previous investment periods. In other words, it is the total profit or loss from an investment that has accumulated from the beginning of the investment until the present time. Cumulative return is an important tool for evaluating the performance of an investment over a long period of time because it takes into account both the growth and decline in the value of the investment. Assuming the purchase of selected company's stocks on January 1, 2020 until April 28, 2023, LPP, KGHM, and DINO recorded gains, while CD PROJECT and CYFROWY POLSAT incurred losses. The highest gain was achieved by the company DINO, while CD PROJECT incurred the biggest loss.
+``` {r prezent5, message = F,warning=F,echo=F, fig.align="center"}
+rdl_CUM <- ggplot() +
+  geom_line(data=CUM_merged, aes(date_index2, .data[["WIG20"]], color="WIG20"), size=1) +
+  geom_line(data=CUM_merged, aes(date_index2, .data[["CDR"]], color="CDR"), size=1) +
+  geom_line(data=CUM_merged, aes(date_index2, .data[["CP"]], color="CP"), size=1) +
+  geom_line(data=CUM_merged, aes(date_index2, .data[["KGHM"]], color="KGHM"), size=1) +
+  geom_line(data=CUM_merged, aes(date_index2, .data[["LPP"]], color="LPP"), size=1) +
+  geom_line(data=CUM_merged, aes(date_index2, .data[["DINO"]], color="DINO"), size=1) +
+  xlab("Date") + ylab("Cumulative log. rates of return") + ggtitle("Comparision of cumulative rates") +
+  theme(plot.title = element_text(hjust = 0.5))
+print(rdl_CUM)
+```
+``` {r corr_matrix, message = F,warning=F,echo=F}
+#macierz i wykres korelacji
+merg_df <- as.data.frame(
+  merge(
+    rdl_WIG20, rdl_CD_PROJECT, rdl_CYFROWY_POLSAT, rdl_KGHM, rdl_LPP, rdl_DINO))
+
+merg_df <- merg_df %>% na.omit()
+
+cor_mat <- cor(merg_df)
+```
+\newpage
+
+To diversify an investment portfolio, a negative correlation between the individual returns is recommended. This means that when one company experiences a decline in returns, the other will not experience a decline, making the investment portfolio safer. Based on the correlation matrix below, it can be inferred that the selected companies are positively correlated with each other, and the correlation is moderate to weak.
+``` {r prezent6, message = F,warning=F,echo=F, fig.align="center"}
+library(corrplot)
+corrplot(cor(merg_df),        # Correlation matrix
+         method = "shade", # Correlation plot method
+         type = "full",    # Correlation plot style (also "upper" and "lower")
+         diag = TRUE,      # If TRUE (default), adds the diagonal
+         tl.col = "black", # Labels color
+         bg = "white",     # Background color
+         title = "",       # Main title
+         col = NULL) 
+```
+
+\newpage
+
+The table below presents alpha and beta coefficients, average returns, standard deviations, and cumulative returns (profits). Alpha and beta are parameters from the Sharpe's single-factor model, which assumes that returns depend on the performance of a general factor characterizing the market (e.g. WIG20 stock index). The model is presented using the following formula:
+
+\begin{equation}
+r_{i,t} = \alpha + \beta \cdot r_{WIG20,t} + \epsilon_t
+\end{equation}
+
+The alpha and beta parameters were estimated using the ordinary least squares method. The beta coefficient indicates by how much the stock return will increase if the stock market index (e.g. WIG20) increases by one unit. In case of Dino, it can be said that it is a defensive company because its rate of return reacts less strongly to changes in the market. The remaining ones can be classified as aggressive companies. KGHM and Cyfrowy Polsat have the highest average deviations from the mean during the analyzed period (sd value). Moreover, both of these companies decline in average. The smallest fluctuations were observed for LPP.
+```{r alfa_beta, message = F,warning=F,echo=F}
+# Tworzenie wektora nazw akcji i zmiennych przechowujących alfy i bety
+stocks <- c("CD.PROJECT", "CYFROWY.POLSAT", "KGHM", "LPP", "DINO")
+alphas <- numeric(length(stocks))
+betas <- numeric(length(stocks))
+
+
+# Pętla for iterująca po nazwach akcji i dopasowująca modele liniowe
+for (i in seq_along(stocks)) {
+  model <- lm(formula = paste(stocks[i], "~ WIG20"), data = merg_df)
+  alphas[i] <- coef(model)[1]
+  betas[i] <- coef(model)[2]
+}
+
+
+
+library(dplyr)
+stocks_lst <- as.list(merg_df)
+sd_stocks <- as.data.frame(t(as.data.frame(lapply(stocks_lst, sd)))) %>%
+  set_colnames(c("sd"))
+mean_stocks <- as.data.frame(t(as.data.frame(lapply(stocks_lst, mean)))) %>%
+  set_colnames(c("mean"))
+profit <- as.data.frame(t(tail(CUM_merged[,2:6],1))) %>%
+  set_colnames(c("profit"))
+```
+
+``` {r dane_ogl, message = F,warning=F,echo=F}
+library(knitr)
+results <- data.frame(Stock = stocks, Alpha = alphas, Beta = betas, 
+                      sd = sd_stocks[2:6,], mean = mean_stocks[2:6,], profit = profit)
+results %>% kable()
+```
+\newpage
+Based on the chart below, it can be inferred that the DINO, LPP, and KGHM companies had a higher average rate of return and higher risk than the WIG20 stock index. Cyfrowy Polsat and CD Project had a lower average rate of return and higher risk than WIG20.
+``` {r prezent7, message = F,warning=F,echo=F, fig.align="left"}
+details <- c("WIG20", "CDR", "CP", "KGHM", "LPP", "DINO")
+risk_profit_data <- data.frame(index = details, sd = sd_stocks, mean = mean_stocks)
+
+wig20_value1 <- risk_profit_data[risk_profit_data$index == "WIG20", "mean"]
+wig20_value2 <- risk_profit_data[risk_profit_data$index == "WIG20", "sd"]
+
+
+risk_profit_map <- ggplot(data = risk_profit_data, aes(x = sd, y = mean, color=index)) +
+  geom_point() +
+  geom_text(aes(label = index), nudge_x = 0.0000000003, nudge_y = 0.00001, size=4) +
+  xlab("risk") + ylab("profit") +
+  geom_hline(yintercept = wig20_value1, linetype = "dashed") +
+  geom_vline(xintercept = wig20_value2, linetype = "dashed") +
+  theme(panel.background = element_rect(fill = "lightgrey")) +
+  ggtitle("risk/profit map") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+risk_profit_map
+```
+\newpage
+# **Value at Risk**
+The following chapter is dedicated to calculating Value at Risk, which is an indicator that represents the amount of financial instrument's market value loss that has a probability of being reached or exceeded within a given time frame at a given level of tolerance. In other words, what part of an investment is at risk of experiencing a loss within a given period of time at a given level of significance.
+
+\begin{equation}
+P(W \leq W_0 - VaR) = \alpha
+\end{equation}
+
+\begin{equation}
+VaR = -R_{\alpha} \cdot W_0 + \mu \cdot W_0
+\end{equation}
+An example analysis was conducted for KGHM with present value 10000PLN. In order to estimate VaR, a parametric method using a GARCH model was chosen. The following steps were taken:
+
+1)A GARCH(1,1) model was estimated with a t-student distribution. The estimation results are shown in the table below:
+```{r garch, message = F,warning=F,echo=F}
+#Value at risk
+library(rugarch)
+
+
+garch_details <- as.xts(merg_df)
+
+spec_KGHM=ugarchspec(variance.model=list(model="sGARCH",
+                                        garchorder=c(1,1)),
+                    mean.model=list(armaOrder=c(1,1)),
+                    distribution.model="std")
+
+garch_KGHM <- ugarchfit(spec_KGHM, data=garch_details$KGHM)
+garch_KGHM@fit$coef %>% kable()
+
+merg_df_pred <- merg_df %>%
+  mutate(KGHM_pred = 0.000071 + 0.560401 * lag(KGHM, default = KGHM[1])) %>%
+  mutate(KGHM_res = KGHM_pred - lag(KGHM, default = KGHM[1]))
+
+
+KGHM_pred <- merg_df_pred[-1 ,c("KGHM", "KGHM_pred", "KGHM_res")] %>%
+  mutate(h=0) %>%
+  mutate(h = 0.000002 + 0.068433 * lag(KGHM_res, default = KGHM_res[1])^2 + 0.881398 * lag(h, default = h[1]) ) %>%
+  mutate(h = ifelse(row_number() == 1, 0, h))
+  
+
+  
+
+ex_ante <- data.frame(NA, 0.000071 + 0.560401 * 0.0001752268, 
+                         NA, 0.000002 + 0.068433 * (-0.0009777617)^2 + 0.881398 * 0.00000211759) %>%
+  set_colnames(c("KGHM", "KGHM_pred", "KGHM_res", "h"))
+
+
+KGHM_pred <- rbind(KGHM_pred, ex_ante) %>% 
+  mutate(R_alfa = lead(KGHM_pred, n = 1) - 1.64 * sqrt(lead(h, n = 1)))
+
+KGHM_pred <- KGHM_pred[1:(nrow(KGHM_pred)-1), ]
+KGHM_mean <- mean(merg_df$KGHM)
+```
+2)The variance was forecasted (ex-post and ex-ante (t+1)):
+\begin{equation}
+\sigma^2_t = 0.0000021 + 0.0683717 \cdot \epsilon^2_{t-1} + 0.8813997 \cdot \sigma^2_{t-1}  
+\end{equation}
+3)The VaR quantile was calculated for a confidence level of 95%.
+
+4)VaR was calculated using equation (3):
+```{r VaR, message = F,warning=F,echo=F}
+VaR = round(-10000*tail(KGHM_pred$R_alfa,1) + KGHM_mean*10000, digits=2)
+cat(paste("VaR = ", VaR))
+
+```
+If the given time interval is one with a specified tolerance level of 0.05, and the VaR (Value at Risk) is 31.64 PLN, it means that the probability of the portfolio value decreasing (incurring losses) by 31.64 PLN or more within one day is equal to or greater than 0.05.
